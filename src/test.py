@@ -3,6 +3,7 @@ import random
 import numpy as np
 import networkx as nx
 from collections import defaultdict
+import statistics
 import csv
 
 
@@ -38,11 +39,7 @@ def compute_solution_cost(problem, path):
 
 
 def run_test(num_cities, density, alpha, beta, seed):
-    print("=" * 70)
-    print(
-        f"Test config: N={num_cities}, density={density}, "
-        f"alpha={alpha}, beta={beta}, seed={seed}"
-    )
+
 
     random.seed(seed)
     np.random.seed(seed)
@@ -63,22 +60,24 @@ def run_test(num_cities, density, alpha, beta, seed):
     t_baseline = time.time() - t0
     baseline_cost = compute_solution_cost(problem, baseline_path)
 
-    print(f"Baseline cost: {baseline_cost:.2f}")
+
 
     # --------------------------------------------------
     # ILS ONLY
     # --------------------------------------------------
     pw_ils = Solver(problem)
     t0 = time.time()
-    ils_path = pw_ils.solve(use_lns=False)
+    ils_path = pw_ils.solution(use_lns=False)
     t_ils = time.time() - t0
     ils_cost = compute_solution_cost(problem, ils_path)
 
     impr_ils = 100.0 * (baseline_cost - ils_cost) / baseline_cost
 
-    print(
-        f"ILS:      cost={ils_cost:.2f}, time={t_ils:.2f}s, impr={impr_ils:.2f}%"
-    )
+    #print(
+    #    f"ILS:      cost={ils_cost:.2f}, time={t_ils:.2f}s, impr={impr_ils:.2f}%"
+    #)
+
+    print(f"{ils_path}\n")
 
     # ------------------------------------------------------------
     # ILS + LNS (only meaningful for larger instances, >50 cities)
@@ -88,45 +87,99 @@ def run_test(num_cities, density, alpha, beta, seed):
     if num_cities >= 50:
         pw_lns = Solver(problem)
         t0 = time.time()
-        lns_path = pw_lns.solve(use_lns=True)
+        lns_path = pw_lns.solution(use_lns=True)
         t_lns = time.time() - t0
         lns_cost = compute_solution_cost(problem, lns_path)
 
         impr_lns = 100.0 * (baseline_cost - lns_cost) / baseline_cost
 
-        print(
-            f"ILS+LNS:  cost={lns_cost:.2f}, time={t_lns:.2f}s, impr={impr_lns:.2f}%"
-        )
+        #print(
+        #    f"ILS+LNS:  cost={lns_cost:.2f}, time={t_lns:.2f}s, impr={impr_lns:.2f}%"
+        #)
+    
+    row = {
+        "N": num_cities,
+        "density": density,
+        "alpha": alpha,
+        "beta": beta,
+        "baseline_cost": baseline_cost,
+        "ils_cost": ils_cost,
+        "ils_time": t_ils,
+        "ils_impr_pct": impr_ils,
+    }
 
-    print("=" * 70)
+    if num_cities >= 50:
+        row.update({
+            "lns_cost": lns_cost,
+            "lns_time": t_lns,
+            "lns_impr_pct": impr_lns,
+        })
+
+    results.append(row)
 
 
-def print_summary_by_beta(results):
-    summary = defaultdict(list)
+
+
+def export_summary_by_alpha(results, filename="summary_by_alpha.csv"):
+    bucket = defaultdict(list)
 
     for r in results:
-        summary[r["beta"]].append(r["improvement_pct"])
+        if "lns_impr_pct" in r:
+            bucket[r["alpha"]].append(r["lns_impr_pct"])
+        else:
+            bucket[r["alpha"]].append(r["ils_impr_pct"])
 
-    print("\nSUMMARY: Improvement over baseline by β")
-    print("=" * 55)
-    print(f"{'β':<6}{'Mean (%)':>12}{'Min (%)':>12}{'Max (%)':>12}")
-    print("-" * 55)
+    rows = []
+    for alpha in sorted(bucket):
+        vals = bucket[alpha]
+        rows.append({
+            "alpha": alpha,
+            "mean_improvement_pct": statistics.mean(vals),
+            "median_improvement_pct": statistics.median(vals),
+            "num_instances": len(vals),
+        })
 
-    for beta in sorted(summary.keys()):
-        values = summary[beta]
-        mean_v = sum(values) / len(values)
-        min_v = min(values)
-        max_v = max(values)
+    with open(filename, "w", newline="") as f:
+        writer = csv.DictWriter(
+            f, fieldnames=rows[0].keys()
+        )
+        writer.writeheader()
+        writer.writerows(rows)
 
-        print(f"{beta:<6}{mean_v:>12.2f}{min_v:>12.2f}{max_v:>12.2f}")
+def export_summary_by_beta(results, filename="summary_by_beta.csv"):
+    bucket = defaultdict(list)
+
+    for r in results:
+        if "lns_impr_pct" in r:
+            bucket[r["beta"]].append(r["lns_impr_pct"])
+        else:
+            bucket[r["beta"]].append(r["ils_impr_pct"])
+
+    rows = []
+    for beta in sorted(bucket):
+        vals = bucket[beta]
+        rows.append({
+            "beta": beta,
+            "mean_improvement_pct": statistics.mean(vals),
+            "median_improvement_pct": statistics.median(vals),
+            "num_instances": len(vals),
+        })
+
+    with open(filename, "w", newline="") as f:
+        writer = csv.DictWriter(
+            f, fieldnames=rows[0].keys()
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+
+    print(f"Summary by beta saved to {filename}")
+
 
 def export_results_csv(results, filename="comparison_results.csv"):
     with open(filename, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=results[0].keys())
         writer.writeheader()
         writer.writerows(results)
-
-    print(f"\nResults saved to {filename}")
 
 if __name__ == "__main__":
 
@@ -142,4 +195,6 @@ if __name__ == "__main__":
                 for beta in beta_values:
                     run_test(n, density, alpha, beta, seed)
 
-    print_summary_by_beta(results)
+    export_results_csv(results)
+    export_summary_by_alpha(results)
+    export_summary_by_beta(results)
