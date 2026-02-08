@@ -38,7 +38,10 @@ def compute_city_max_loads(problem, beta=None):
         # Scaling factors based on graph size
         if num_nodes <= 20: p = 0.5   
         elif num_nodes <= 50: p = 0.7 
-        else: p = 0.9                 
+        else: p = 0.9    
+
+        if 1.5 <= beta <= 2.5:
+            p += 0.3             
         
         # Physics drag calculation
         f_beta = 1.0 / (beta ** p)
