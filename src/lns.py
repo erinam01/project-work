@@ -95,6 +95,10 @@ def lns_virtual(problem, shortest, start_routes, iterations=100, destroy_fractio
      # the best solution found so far without implementing LNS
     best_cost = routes_cost(best_routes, problem, shortest)
 
+    # EXTRA --> # Adaptive loop: Run fewer iterations for massive problems to save time
+    if len(virtual_nodes) > 150:
+        iterations = max(20, iterations // 2)
+
     for _ in range(iterations):
         partial, removed = destroy(best_routes, fraction=destroy_fraction)
         

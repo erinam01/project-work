@@ -195,7 +195,7 @@ def export_summary_csv(results, group_keys, filename=None):
 
 if __name__ == "__main__":
 
-    n_cities = [10, 50, 100]    
+    n_cities = [10, 50, 100]
     alpha_values = [0.0, 1.0, 2.0, 4.0]
     beta_values = [0.5, 1, 2, 4]
     density_values = [0.2, 0.5, 1.0]
@@ -223,7 +223,7 @@ if __name__ == "__main__":
     export_summary_csv(flat_results, ("density",))
     export_summary_csv(flat_results, ("n_cities", "alpha", "beta"))
 
-    with open('time_needed.csv', 'w', newline='') as csvfile:
+    with open('time_needed_test.csv', 'w', newline='') as csvfile:
         fieldnames = ['n_cities', 'density', 'alpha', 'beta', 'time_to_run']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()

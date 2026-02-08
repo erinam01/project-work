@@ -48,7 +48,9 @@ To run the experiments:
 python -m src.test
 ```
 
-This executes multiple configurations and compares the proposed methods with the baseline solution. 
+This executes multiple configurations and compares the proposed methods with the baseline solution. To see the run time needed for each type of configuration, a `time_needed.csv` was provided to allow for estimation; this includes only the problem solution time and not the time for the Problem instance creation.
+- **Small instances** (N < 100): All configurations are solved in under one second.
+- **Large instances** (N = 100): The majority solve in under two minutes. However, outliers exist: five configurations exceed two minutes, and two exceed five minutes. These outliers share specific characteristics (Density = 0.2 and β ∈ {2.0,4.0}), where the combination of graph sparsity and high weight penalties increases computational complexity."
 
 # Output
 Finally, the system generates multiple CSV files that allow a detailed comparison of the performance of the different methods and clearly highlight the improvements achieved over the baseline solution. 
