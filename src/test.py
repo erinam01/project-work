@@ -97,9 +97,9 @@ def run_test(num_cities, density, alpha, beta, seed):
     # BASELINE
     # --------------------------------------------------
     t0 = time.time()
-    baseline_path = solve(problem)
+    # baseline_path = problem.baseline()
     t_baseline = time.time() - t0
-    baseline_cost = compute_solution_cost(problem, baseline_path)
+    baseline_cost = problem.baseline()
 
     # --------------------------------------------------
     # ILS ONLY
@@ -123,6 +123,7 @@ def run_test(num_cities, density, alpha, beta, seed):
     # ILS + LNS (only meaningful for larger instances, >50 cities)
     # ------------------------------------------------------------
     num_cities = len(problem.graph.nodes) - 1
+    time_needed = t_ils
 
     if num_cities >= 50:
         t0 = time.time()
@@ -136,7 +137,7 @@ def run_test(num_cities, density, alpha, beta, seed):
         print(
             f"ILS+LNS:  cost={lns_cost:.2f}, time={t_lns:.2f}s, impr={impr_lns:.2f}%"
         )
-
+        time_needed += t_lns
         #print(
         #    f"ILS+LNS:  cost={lns_cost:.2f}, time={t_lns:.2f}s, impr={impr_lns:.2f}%"
         #)
@@ -150,7 +151,7 @@ def run_test(num_cities, density, alpha, beta, seed):
         "beta": beta,
         "baseline_cost": baseline_cost,
         "ils_cost": ils_cost,
-        "improvement": (baseline_cost - ils_cost) / baseline_cost if baseline_cost > 0 else 0.0,
+        "improvement": (baseline_cost - ils_cost) / baseline_cost if baseline_cost > 0 else 0.0
     })
     return test_results
 
@@ -202,17 +203,32 @@ if __name__ == "__main__":
 
     results = []
 
-
+    time_needed = {}
     for n in n_cities:
         for density in density_values:
             for alpha in alpha_values:
                 for beta in beta_values:
+                    t0 = time.time()
                     results.append(run_test(n, density, alpha, beta, seed))
-   
+                    t1 = time.time()
+                    config = (n, density, alpha, beta)
+                    time_needed[config] = t1 - t0
+                    
+                    print(f"----- TIME NEEDED: {t1 - t0:.4f} seconds -----\n")
+
     flat_results = [r for sublist in results for r in sublist] # for easier printing
     export_summary_csv(flat_results, ("beta",))
     export_summary_csv(flat_results, ("alpha",))
     export_summary_csv(flat_results, ("n_cities",))
     export_summary_csv(flat_results, ("density",))
-
     export_summary_csv(flat_results, ("n_cities", "alpha", "beta"))
+
+    with open('time_needed.csv', 'w', newline='') as csvfile:
+        fieldnames = ['n_cities', 'density', 'alpha', 'beta', 'time_to_run']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        for config, time_X in time_needed.items():
+            row = dict(zip(fieldnames[:-1], config))
+            row['time_to_run'] = f"{time_X:.4f}"
+            writer.writerow(row)
+
