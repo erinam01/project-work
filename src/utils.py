@@ -1,6 +1,13 @@
 import random
 from collections import Counter
+import networkx as nx
 
+def get_precision(number):
+    """Counts decimal places of a number to determine necessary precision."""
+    s = str(number)
+    if '.' not in s:
+        return 0
+    return len(s) - s.index('.') - 1
 
 def split_cities_by_max_load(problem, city_max_loads):
     """
@@ -9,23 +16,40 @@ def split_cities_by_max_load(problem, city_max_loads):
     Meaning that the algorithm decided that city had far too much gold and it needed to be split for efficient cos solution
     """
     virtual_nodes = []
+
+    # precision handling: determine max decimal places across all gold values to set a consistent rounding precision for virtual nodes
+    all_gold = [problem.graph.nodes[n]["gold"] for n in problem.graph.nodes]
+    max_precision = 0
+    for g in all_gold:
+        p = get_precision(g)
+        if p > max_precision:
+            max_precision = p
+            
+    # add a safety buffer of 1 decimal
+    precision = max(2, max_precision)
+
     for node in problem.graph.nodes:
-        if node == 0: continue # skip depot
+        if node == 0: continue 
+
+        remaining = problem.graph.nodes[node]["gold"]
+        limit = city_max_loads.get(node, remaining)
         
-        remaining_gold = problem.graph.nodes[node]["gold"]
-        limit = city_max_loads.get(node, remaining_gold)
-        # city max loads is the computed amount of "max gold" associated to each city
-        # once the problem is created, the function computes an adaptive max load that should be taken from each city
-        # if the city has too much gold, takin the full amount and draggin it around would cause cost inefficiences, and so the gold is separated
-        # and cities are split into several 'virtual cities' that the problem treats as separate ones -->  for more parameter discussion see report
-        if limit >= remaining_gold:
-            virtual_nodes.append((node, remaining_gold))
-        else:
-            while remaining_gold > 1e-6:
-                # for floating point precision; last chunk takes whatever is left
-                pickup = min(limit, remaining_gold)
-                virtual_nodes.append((node, pickup))
-                remaining_gold -= pickup
+        # sanity check to avoid infinite loops if limit is effectively 0
+        if limit < 1e-6: limit = 1.0 
+
+        while remaining > 0:
+            if remaining <= limit:
+                pickup = remaining
+            else:
+                pickup = limit
+            
+            # round to fix precision
+            pickup = round(pickup, precision)
+            
+            remaining -= pickup
+            remaining = round(remaining, precision)
+
+            virtual_nodes.append((node, pickup))
     return virtual_nodes
 
 def routes_cost(routes, problem, shortest):
@@ -55,30 +79,62 @@ def routes_cost(routes, problem, shortest):
     return total
 
 
+def fix_edge(problem, u, v, v_gold):
+    """
+    Checks if the move u -> v is valid.
+    - If valid (direct edge exists), returns [(v, v_gold)].
+    - If invalid (no edge), returns the shortest path sequence: 
+      [(stop1, 0.0), (stop2, 0.0), ... (v, v_gold)]
+    """
+    G = problem.graph
+    
+    # if nodes are the same, no move needed (but we might need to pick up gold)
+    if u == v:
+        return [(v, v_gold)]
+
+    # check if direct edge exists
+    if G.has_edge(u, v):
+        return [(v, v_gold)]
+    
+    # if no edge, find shortest path (the "fix")
+    # get path: [u, stop1, stop2, ..., v]
+    path_nodes = nx.shortest_path(G, source=u, target=v, weight='dist')
+    
+    fixed_segment = []
+    
+    # add intermediate stops (0.0 gold)
+    # w slice [1:-1] to skip 'u' (start) and 'v' (end)
+    for node in path_nodes[1:-1]:
+        fixed_segment.append((node, 0.0))
+        
+    # add final destination with its original gold pickup
+    fixed_segment.append((v, v_gold))
+    
+    return fixed_segment
 
 
 def build_path_from_routes(routes, problem, shortest):
   # convert virtual node routes into final path [(city, gold), ...]
   # takes the hierarchical solution structure used by the optimizer (a List of Lists of virtual nodes) 
   # and flattens it into a single, linear sequence (a List of Tuples), adding return to depot as well
-    path = []
-    # routes = [ [(1,50kg), (5,6kg)],  [(2,50kg), (3,....)]
+    path = [(0,0.0)] # start at depot
+    current_node = 0 
+    
     for route in routes:
         for node in route:
-            # UNPACK TUPLE
-            city_id, pickup = node 
+            target_id, pickup = node
+            segment = fix_edge(problem, current_node, target_id, pickup)
+            path.extend(segment)
             
-            # add exactly this chunk to the path (CAREFUL)
-            path.append((city_id, pickup))
+            current_node = target_id
             
-        # add return to depot necessary ofr logic
-        path.append((0, 0))
+        # return to depot
+        if current_node != 0:
+            segment = fix_edge(problem, current_node, 0, 0.0)
+            path.extend(segment)
+            current_node = 0
 
     return path
-
-
-
-
 
 
 # -------- NEIGHBOURHOOD OPERATORS --------
@@ -151,6 +207,7 @@ def repair_routes(routes, virtual_nodes):
     VIRTUAL NODES: "Master List" of every single gold chunk that exists in the problem
     """
     # count how many chunks we should have, ie, how many times the city has been split
+    virtual_nodes = [(v[0], round(v[1], 6)) for v in virtual_nodes]
     required_counts = Counter(virtual_nodes)
 
     # COUNTER FROM COLLECTIONS LOGIC WAS ADDED --> because of artificial duplicates logic, we might have the same city appearing multiple times 
@@ -158,7 +215,12 @@ def repair_routes(routes, virtual_nodes):
 
     # count how many of each chunk we CURRENTLY have in the routes --> how many chunks this route asks us to take
     # (for efficiency reasons that the route counted)
-    current_nodes = [vn for r in routes for vn in r]
+    # normalize current routes before counting
+    normalized_routes = []
+    for r in routes:
+        normalized_routes.append([(vn[0], round(vn[1], 6)) for vn in r])
+
+    current_nodes = [vn for r in normalized_routes for vn in r]
     current_counts = Counter(current_nodes)
 
     missing = []

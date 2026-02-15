@@ -34,6 +34,7 @@ def compute_city_max_loads(problem, beta=None):
     else:
         num_nodes = len(nodes)
         max_gold = max(gold_values)
+        avg_gold = sum(gold_values) / len(gold_values)
         
         # Scaling factors based on graph size
         if num_nodes <= 20: p = 0.5   
@@ -46,8 +47,10 @@ def compute_city_max_loads(problem, beta=None):
         # Physics drag calculation
         f_beta = 1.0 / (beta ** p)
         scale = min(1.0, 50 / num_nodes)
-        
-        global_cap = max(1.0, max_gold * f_beta * scale)
+
+        calculated_cap = max_gold * f_beta * scale
+        minimum_sensible_cap = avg_gold / 10.0
+        global_cap = max(1.0, calculated_cap, minimum_sensible_cap)
 
     # 2. Build the City-Specific Dictionary
     city_max_load = {}
@@ -55,7 +58,6 @@ def compute_city_max_loads(problem, beta=None):
         if n == 0: continue
         # The limit is the smaller of: Global Cap OR The City's total gold
         city_max_load[n] = min(nodes[n]["gold"], global_cap)
-        
     return city_max_load
 
 def ils(problem, shortest, max_iter=300, city_max_load=None):
@@ -101,6 +103,12 @@ def ils(problem, shortest, max_iter=300, city_max_load=None):
 
     return best_routes
 
+def compute_fraction_destroy(num_cities):
+    if num_cities >= 100:
+        return 0.10
+    else:
+        return 0.25
+
 def solve(problem):
     shortest = dict(
         nx.all_pairs_dijkstra_path_length(problem.graph, weight="dist")
@@ -118,7 +126,7 @@ def solve(problem):
             shortest,
             start_routes=best_routes,
             iterations=80,
-            destroy_fraction=0.25,
+            destroy_fraction=compute_fraction_destroy(num_nodes),
             city_max_load=city_max_loads
         )
 

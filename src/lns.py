@@ -1,12 +1,11 @@
+from collections import Counter
 import random
 from .utils import routes_cost, repair_routes, split_cities_by_max_load
-
-
 # --------------------------------------------------
 # DESTROY OPERATOR
 # --------------------------------------------------
 
-def destroy(routes, fraction=0.25):
+def destroy(routes, fraction):
     """
     Remove a fraction of cities from the current solution.
     In the case of really inefficient routes a move or swap operator may not be enough
@@ -21,17 +20,21 @@ def destroy(routes, fraction=0.25):
 
     k = max(1, int(len(all_cities) * fraction)) 
     # k = number of cities to destroy
-    removed = set(random.sample(all_cities, k)) 
+    removed = random.sample(all_cities, k)
     # sample the k cities to destroy (at least 1)
-
+    to_remove_counts = Counter(removed)
     new_routes = []
     for r in routes:
-        nr = [c for c in r if c not in removed]
-        if nr:
-            new_routes.append(nr) 
-            # rebuild the route without those cities
+        new_route = []
+        for city in r:
+            if to_remove_counts[city] > 0:
+                to_remove_counts[city] -= 1
+            else:
+                new_route.append(city)
+        if new_route:
+            new_routes.append(new_route)
 
-    return new_routes, list(removed)
+    return new_routes, removed
 
 
 # --------------------------------------------------
@@ -49,36 +52,37 @@ def greedy_repair_virtual(routes, removed, problem, shortest):
     Returns:
         routes with removed nodes reinserted
     """
+    all_costs = [routes_cost(routes, problem, shortest) for r in routes]
+    # calculate total cost once
     for vn in removed:
         best_cost = float("inf")
-        best_routes = None
+        best_position = None  # (route_index, insert_index)
+
+        new_route_cost = routes_cost([[vn]], problem, shortest)
+        if new_route_cost < best_cost:
+            best_cost = new_route_cost
+            best_position = (len(routes), 0)
 
         # try inserting vn into all existing routes
-        for i in range(len(routes) + 1):
-            # we test every possible insertion in the solution
-            if i == len(routes):
-                trial_routes = routes + [[vn]]
-                # add the city as its own route as opposed to any other pre-existing route
-                cost = routes_cost(trial_routes, problem, shortest)
-                if cost < best_cost:
-                    best_cost = cost
-                    best_routes = trial_routes
-                continue
-
-            for pos in range(len(routes[i]) + 1):
-                trial_route = routes[i][:pos] + [vn] + routes[i][pos:]
-                trial_routes = routes[:i] + [trial_route] + routes[i+1:]
+        for i, route in enumerate(routes):
+            original_cost = all_costs[i]
+            for pos in range(len(route) + 1):
+                trial_route = route[:pos] + [vn] + route[pos:]
      
-                cost = routes_cost(trial_routes, problem, shortest)
-                if cost < best_cost:
-                    best_cost = cost
-                    best_routes = trial_routes
+                new_route_cost = routes_cost([trial_route], problem, shortest)
+                delta = new_route_cost - original_cost
+                if delta < best_cost:
+                    best_cost = delta
+                    best_position = (i,pos)
 
-        if best_routes:
-            routes = best_routes
-        else:
-            # fallback if somehow no insertion found (shouldn't happen with new route option)
+    # apply the best insertion
+        i,pos = best_position
+        if i == len(routes):
             routes.append([vn])
+            all_costs.append(best_cost)
+        else:
+            routes[i].insert(pos, vn)
+            all_costs[i] += best_cost
 
     return routes
 
